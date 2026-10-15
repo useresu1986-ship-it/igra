@@ -1,0 +1,14 @@
+node_modules/
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+.cache/
+tmp/
+temp/
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~

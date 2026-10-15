@@ -72,4 +72,4 @@ function economics(){const E=ensureEconomy(),v=incomeStatement(period,selectedFi
 const previousRender=render;
 render=function(){ensureEconomy();if(tab==='econ'){document.querySelector('#cash').textContent=money(S.cash);document.querySelector('#day').textContent=S.day;document.querySelector('#net').textContent=money(net()+outstanding());document.querySelector('#energy').textContent=S.energy+'%';document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelector('#main').innerHTML=economics();}else previousRender();};
 const sidebar=document.querySelector('#nav');if(sidebar){let b=document.createElement('button');b.dataset.tab='econ';b.innerHTML='▤ <span>Экономический аудит</span>';let guideBtn=sidebar.querySelector('[data-tab="guide"]');sidebar.insertBefore(b,guideBtn);}
-window.GameTest={...window.GameTest,ensureEconomy,econInvoice,collectInvoices,incomeStatement,outstanding,runProjectDay};render();
+window.GameTest={...window.GameTest,ensureEconomy,econInvoice,collectInvoices,incomeStatement,outstanding,runProjectDay};

@@ -21,4 +21,4 @@ const prevContractsRender11=render;render=function(){if(tab==='contracts11'){doc
 document.querySelector('#nav')?.insertAdjacentHTML('beforeend','<button data-tab="contracts11">🧾 <span>Договоры с клиентами</span></button>');
 document.addEventListener('click',e=>{const b=e.target.closest('button[data-contract11]');if(b)takeContract11(b.dataset.contract11)});
 const priorContractClose11=closeModal;closeModal=function(){contracts11().active=null;priorContractClose11()};
-window.ContractsV11={contracts11,newOffers11,takeContract11,settleContracts11,contractsScreen11};newOffers11();render();
+window.ContractsV11={contracts11,newOffers11,takeContract11,settleContracts11,contractsScreen11};newOffers11();

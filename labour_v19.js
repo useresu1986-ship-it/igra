@@ -25,4 +25,4 @@ function labourScreen19(){let rows=labourStats19(0),recent=labourStats19(30),tot
 const priorRender19=render;
 render=function(){if(tab==='labour19'){for(const [k,v] of [['cash',money(S.cash)],['day',S.day],['net',money(net())],['energy',S.energy+'%']]){let el=document.getElementById(k);if(el)el.textContent=v}document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab==='labour19'));document.querySelector('#main').innerHTML=labourScreen19();return}priorRender19()};
 document.getElementById('nav')?.insertAdjacentHTML('beforeend','<button data-tab="labour19">▤ <span>Анализ труда</span></button>');
-window.Labour19Test={labour19,labourStats19,labourScreen19};render();
+window.Labour19Test={labour19,labourStats19,labourScreen19};

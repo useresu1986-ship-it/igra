@@ -52,4 +52,4 @@ document.getElementById('nav')?.insertAdjacentHTML('beforeend','<button data-tab
 document.addEventListener('change',e=>{if(e.target.id==='real-region')changeRegion18(e.target.value);if(e.target.id==='real-prices')togglePrice18(e.target.value);if(e.target.dataset.realTax){if(e.target.value)classifyReceipt18(Number(e.target.dataset.realTax),e.target.value);else{delete realism18().tax.records[e.target.dataset.realTax];save();render()}}});
 document.addEventListener('click',e=>{if(e.target.closest('#real-pay'))payNpd18()});
 window.Realism18Test={RE18,realism18,expense18,region18,annualTax18,eligibleReceipts18,classifyReceipt18,payNpd18,monthlyBudget18,changeRegion18,togglePrice18};
-realism18();refreshHousing18();render();
+realism18();refreshHousing18();

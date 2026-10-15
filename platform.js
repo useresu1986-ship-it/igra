@@ -21,4 +21,4 @@ document.addEventListener('click',e=>{let b=e.target.closest('button[data-reward
 const navp=document.querySelector('#nav');if(navp)navp.insertAdjacentHTML('beforeend','<button data-tab="bonuses">🎁 <span>Добровольные бонусы</span></button>');
 /* Only attempt remote SDK inside Yandex-hosted frame; otherwise remain fully offline. */
 if(typeof location!=='undefined'&&/\.yandex\.(ru|com|by|kz)$/.test((location.ancestorOrigins?.[0]||'').replace(/^https?:\/\//,''))){const script=document.createElement('script');script.src='https://yandex.ru/games/sdk/v2';script.onload=initYandex;script.onerror=()=>console.warn('SDK download failed');document.head.appendChild(script)}
-window.PlatformTest={platformStatus,awardEnergy,watchRewarded,adsScreen,initYandex};render();
+window.PlatformTest={platformStatus,awardEnergy,watchRewarded,adsScreen,initYandex};

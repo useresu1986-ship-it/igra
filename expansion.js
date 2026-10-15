@@ -45,4 +45,4 @@ economics=function(){return oldEconomics()+advancedFinance()};
 // Agency actions use document delegation without modifying the older dispatcher.
 document.addEventListener('click',e=>{let b=e.target.closest('button');if(!b)return;if(b.dataset.agency){agencyApply(b.dataset.agency)}if(b.dataset.lifestyle){setLifestyle(b.dataset.lifestyle)}});
 window.ExpansionTest={ext,contractFor,agencyApply,agencyDecision,canEnableAds,monetizeChannel,getChannel,setLifestyle,XP};
-ext();render();
+ext();

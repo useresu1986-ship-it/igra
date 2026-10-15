@@ -10,6 +10,19 @@ const ASSETS=[['Б/у ноутбук','💻',18000,13500,'Открывает ц�
 const money=n=>Math.round(n||0).toLocaleString('ru-RU')+' ₽'; const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));const rnd=(a,b)=>a+Math.random()*(b-a);
 const KEY='iz_nulya_v3_state';const initial=()=>({version:3,day:1,cash:1500,debt:0,energy:90,stress:12,hours:12,rep:0,skills:{},owned:[],projects:{},ledger:[],events:[],tab:'home',workCount:0,lastBonus:0,seed:0});
 let S;try{S=JSON.parse(localStorage.getItem(KEY))||initial();if(S.version!==3)S=initial()}catch{S=initial()}let tab=S.tab||'home',filter='Все',query='',period=30,selectedFinance='all',modal=null;
+// Скрипты регистрируют экраны и расширяют render синхронно, в порядке index.html.
+// Первый экран показываем только после завершения этой фазы: ранний render
+// не знает вкладок, добавленных последующими модулями.
+let gameInitialized=false;
+function initializeGame(){
+ if(gameInitialized)return;
+ const availableTabs=Array.from(document.querySelectorAll('#nav button[data-tab]'),button=>button.dataset.tab);
+ tab=availableTabs.includes(S.tab)?S.tab:'home';
+ S.tab=tab;
+ render();
+ gameInitialized=true;
+}
+document.addEventListener('DOMContentLoaded',initializeGame,{once:true});
 const has=id=>S.owned.includes(id),pr=id=>S.projects[id],sum=(rows,fn)=>rows.reduce((a,b)=>a+fn(b),0);
 function book(category,amount,source,note='',project=''){amount=Math.round(amount);if(!Number.isFinite(amount))throw Error('Invalid transaction');S.cash+=amount;S.ledger.push({id:S.ledger.length+1,day:S.day,category,amount,source,note,project});if(S.ledger.length>12000)S.ledger=S.ledger.slice(-10000)}
 function toast(t){const e=document.querySelector('#toast');e.textContent=t;e.classList.add('visible');clearTimeout(window.__toast);window.__toast=setTimeout(()=>e.classList.remove('visible'),2900)}
@@ -49,4 +62,4 @@ function act(action){if(action==='nextday')rest();else if(action==='closemodal')
 document.addEventListener('click',e=>{let b=e.target.closest('button');if(!b)return;if(b.dataset.tab){tab=b.dataset.tab;filter='Все';query='';save();render();return}if(b.dataset.act){act(b.dataset.act);return}if(b.dataset.work){startWork(b.dataset.work);return}if(b.dataset.open){openProject(b.dataset.open);return}if(b.dataset.produce){produce(b.dataset.produce);return}if(b.dataset.hire){hire(b.dataset.hire);return}if(b.dataset.asset!==undefined){buyAsset(+b.dataset.asset);return}if(b.dataset.fproject){selectedFinance=b.dataset.fproject;tab='finance';render();return}if(b.dataset.answer!==undefined&&modal){let answer=+b.dataset.answer;if(modal.type==='memory'){if(answer===modal.seq[modal.tries]){modal.tries++;document.querySelector('#sequencehint').textContent='Введено: '+modal.tries+'/4';if(modal.tries===4)workResult(true)}else workResult(false)}else workResult(answer===modal.correct)} });
 document.addEventListener('change',e=>{if(e.target.id==='filter'){filter=e.target.value;render()}if(e.target.id==='period'){period=+e.target.value;render()}if(e.target.id==='finproject'){selectedFinance=e.target.value;render()}});document.addEventListener('input',e=>{if(e.target.id==='search'){let p=e.target.selectionStart;query=e.target.value;render();let t=document.querySelector('#search');t.focus();t.setSelectionRange(p,p)}});
 document.querySelector('#savebtn').addEventListener('click',()=>{save();toast('Сохранено на этом устройстве')});
-window.GameTest={initial,book,advanceDay,ledgerTotals,net,WORK,PROJECTS,getState:()=>S,reset:()=>{S=initial();render()},openProject,produce,workResult};render();
+window.GameTest={initial,book,advanceDay,ledgerTotals,net,WORK,PROJECTS,getState:()=>S,reset:()=>{S=initial();render()},openProject,produce,workResult};

@@ -19,4 +19,3 @@ render=function(){if(tab==='planning'){document.querySelector('#cash').textConte
 document.querySelector('#nav')?.insertAdjacentHTML('beforeend','<button data-tab="planning">🧮 <span>Планирование кассы</span></button>');
 document.addEventListener('change',e=>{if(e.target.id==='v9horizon'){FinanceV9.horizon=Number(e.target.value);render()}});
 window.FinanceV9={v9DailyCosts,v9Forecast,v9LedgerBalance,v9Audit};
-render();
