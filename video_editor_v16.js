@@ -4,7 +4,7 @@
 const PHASES=['Сценарий','Таймлайн','Звук и права','Обложка','Проверка'];
 const CLIPS=[{id:'hook',name:'Сильный хук',duration:3,ret:.18},{id:'intro',name:'Затянутое вступление',duration:8,ret:-.12},{id:'value',name:'Основная ценность',duration:12,ret:.23},{id:'proof',name:'Доказательство / пример',duration:9,ret:.15},{id:'cta',name:'Призыв к действию',duration:4,ret:.04},{id:'filler',name:'Повторение мысли',duration:10,ret:-.16},{id:'recap',name:'Вывод',duration:6,ret:.09},{id:'surprise',name:'Неожиданный поворот',duration:5,ret:.11}];
 let draft=null,phase=0,status='';
-function newDraft(id,format='short'){draft={id,format,genre:'0',region:'ru',effort:1,promo:0,title:'',thumbnail:'clear',tracks:[],music:'licensed',voice:'clean',subtitle:true,pacing:'dynamic',source:'original',sponsor:'none'};phase=0;status='';return draft}
+function newDraft(id,format='short'){draft={id,format,genre:'0',region:'ru',effort:1,promo:0,title:'',thumbnail:'clear',tracks:[],music:'licensed',voice:'clean',subtitle:true,pacing:'dynamic',source:'original',sponsor:'none'};phase=0;status='';markPendingAction('video',id);return draft}
 function estimate(d){let seq=d.tracks.map(id=>CLIPS.find(c=>c.id===id)).filter(Boolean),duration=seq.reduce((a,c)=>a+c.duration,0),unique=new Set(seq.map(c=>c.id)).size===seq.length;
  let ideal=d.format==='short'?{min:17,max:36}:{min:27,max:70}; // Long-format compressed into editable scene-time units.
  let timing=duration>=ideal.min&&duration<=ideal.max?1:.65;
@@ -21,7 +21,7 @@ function estimate(d){let seq=d.tracks.map(id=>CLIPS.find(c=>c.id===id)).filter(B
 }
 function submit(){if(!draft)return {ok:false,error:'Нет проекта монтажа'};let ev=estimate(draft);if(ev.seq.length<3)return {ok:false,error:'Соберите минимум три сцены'};if(!draft.title.trim())return {ok:false,error:'Заполните заголовок'};
  let d={...draft};let r=window.YouTubeV15.create(d.id,{format:d.format,genre:d.genre,region:d.region,effort:d.effort,promo:d.promo,editor:ev,editorData:{title:d.title,thumbnail:d.thumbnail,tracks:d.tracks.slice(),music:d.music,voice:d.voice,subtitle:d.subtitle,source:d.source}});
- if(r.ok){status='Опубликовано: '+d.title;draft=null;phase=0;}return r;
+ if(r.ok){status='Опубликовано: '+d.title;draft=null;phase=0;S.pendingAction=null;save();}return r;
 }
 function selectHTML(id,opts,chosen){return `<select id="${id}">${opts.map(([v,n])=>`<option value="${v}" ${chosen===v?'selected':''}>${n}</option>`).join('')}</select>`}
 function buttons(){return `<div class="btnrow"><button class="ghost" data-ve-back="1" ${phase===0?'disabled':''}>← Назад</button>${phase<4?'<button class="primary" data-ve-next="1">Далее →</button>':'<button class="primary" data-ve-publish="1">Опубликовать видео</button>'}</div>`}
@@ -39,5 +39,5 @@ let nav=document.querySelector('#nav');if(nav)nav.insertAdjacentHTML('beforeend'
 document.addEventListener('input',ev=>{if(ev.target.id==='ve-title')set('ve-title',ev.target.value)});
 document.addEventListener('change',ev=>{let id=ev.target.id;if(id==='ve-channel'){newDraft(ev.target.value);render()}else if(id?.startsWith('ve-')){set(id,ev.target.value);render()}});
 document.addEventListener('click',ev=>{let b=ev.target.closest('button');if(!b)return;let ds=b.dataset;if(ds.veAdd){if(draft.tracks.length<12)draft.tracks.push(ds.veAdd);render()}else if(ds.veDel!==undefined){draft.tracks.splice(Number(ds.veDel),1);render()}else if(ds.veBack){phase=Math.max(0,phase-1);render()}else if(ds.veNext){phase=Math.min(4,phase+1);render()}else if(ds.veStep!==undefined){phase=Number(ds.veStep);render()}else if(ds.vePublish){let r=submit();toast(r.ok?'Видео выпущено и передано в YouTube Studio':r.error);render()}});
-window.VideoEditorV16={newDraft,estimate,submit,screen,getDraft:()=>draft,CLIPS};
+window.VideoEditorV16={cancelDraft:()=>{draft=null;phase=0;status='';},newDraft,estimate,submit,screen,getDraft:()=>draft,CLIPS};
 })();
