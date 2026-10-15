@@ -1,0 +1,25 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const noop=()=>{};const nodes={};function fake(){return {textContent:'',innerHTML:'',dataset:{},classList:{add:noop,remove:noop,toggle:noop},addEventListener:noop,querySelector:()=>null,querySelectorAll:()=>[],style:{},insertBefore:noop,appendChild:noop,focus:noop,setSelectionRange:noop};}
+let main=fake();const document={querySelector:q=>q==='#main'?main:(nodes[q]||(nodes[q]=fake())),querySelectorAll:()=>[],createElement:()=>fake(),addEventListener:noop};const localStorage={getItem:()=>null,setItem:noop};const ctx={document,localStorage,window:{},console,Math,JSON,Number,String,Array,Object,Date,Intl,setTimeout:noop,clearTimeout:noop};vm.createContext(ctx);
+for(const f of ['game.js','economy.js','expansion.js'])vm.runInContext(fs.readFileSync(__dirname+'/'+f,'utf8'),ctx);
+const ex=s=>vm.runInContext(s,ctx);
+ex('S.cash=1000000');ex("openProject('p2');openProject('p3')");
+assert.equal(ex("contractFor('p3').status"),'none');
+ex("agencyApply('p2');agencyApply('p3')");
+assert.equal(ex("contractFor('p2').status"),'review');
+ex('S.projects.p2.posts=12;S.projects.p2.audience=13000;S.projects.p3.posts=12;S.projects.p3.audience=12000');
+ex('advanceDay();advanceDay();advanceDay()');
+assert.equal(ex("contractFor('p2').status"),'rejected','Russia must not bypass eligibility');
+assert.equal(ex("contractFor('p3').status"),'approved');
+assert.equal(ex("canEnableAds('p2')"),false);
+assert.equal(ex("canEnableAds('p3')"),true);
+const grossBefore=ex("getChannel('p3').adGross");
+ex("monetizeChannel('p3',500000)");
+let gross=ex("getChannel('p3').adGross")-grossBefore;
+let fee=ex("getChannel('p3').fees");
+assert.equal(fee,Math.round(gross*.20));
+assert.equal(ex("ensureEconomy().receivables.some(x=>x.project==='p3'&&x.gross===getChannel('p3').adGross-getChannel('p3').fees)"),true);
+ex("setLifestyle('budget')");assert.equal(ex('ext().living'),'budget');
+let before=ex('S.cash');ex('advanceDay()');assert(ex('S.cash')<before);assert(main.innerHTML.length>0);
+ex("tab='econ';render()");assert(main.innerHTML.includes('Агентские договоры YouTube'));
+console.log('PASS v0.5: intermediary contract, 20% fee, Russian restrictions, scheduled receivables, lifestyle, financial UI');

@@ -1,0 +1,10 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');const noop=()=>{};
+const fake=()=>({textContent:'',innerHTML:'',dataset:{},classList:{add:noop,remove:noop,toggle:noop},addEventListener:noop,querySelector:()=>null,querySelectorAll:()=>[],insertAdjacentHTML:noop,insertBefore:noop,style:{},focus:noop,setSelectionRange:noop});
+const document={querySelector:()=>fake(),querySelectorAll:()=>[],addEventListener:noop,createElement:fake,head:fake()};const ctx={document,localStorage:{getItem:()=>null,setItem:noop},window:{},console,Math,JSON,Number,String,Array,Object,Date,Intl,setTimeout:noop,clearTimeout:noop};vm.createContext(ctx);
+for(const file of ['game.js','economy.js','expansion.js','world.js','systems.js','minigames.js','platform.js','simulation_v8.js','finance_v9.js','strategy_v10.js'])vm.runInContext(fs.readFileSync(__dirname+'/'+file,'utf8'),ctx);
+const run=s=>vm.runInContext(s,ctx);
+run('S.cash=50000; S.hours=12; S.energy=100;openProject("p0")');assert(run('pr("p0").open'));
+let old=run('S.cash');run('chooseStrategy("p0","promo")');let r=run('createStrategicRelease("p0",0.8)');assert(r.ok);assert.equal(run('S.cash'),old-2500);assert.equal(run('pr("p0").posts'),1);assert.equal(run('strategyState().history.length'),1);assert(run('S.ledger.some(x=>x.category==="Продвижение проекта")'));
+run('S.hours=12;S.energy=100;chooseStrategy("p0","quality")');old=run('S.cash');r=run('createStrategicRelease("p0",0)');assert(r.ok&&r.failed);assert.equal(run('S.cash'),old);assert.equal(run('S.hours'),7);
+run('S.hours=0');assert.equal(run('createStrategicRelease("p0").ok'),false);assert(run('strategyScreen().includes("Журнал последних решений")'));
+console.log('PASS 0.10 strategy: budgets, time, failures, events and ledger');

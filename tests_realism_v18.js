@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),noop=()=>{};
+const fake=()=>({textContent:'',innerHTML:'',dataset:{},classList:{add:noop,remove:noop,toggle:noop},addEventListener:noop,insertAdjacentHTML:noop,insertBefore:noop,querySelector:()=>null,querySelectorAll:()=>[],style:{},focus:noop});
+const nodes={},document={querySelector:x=>nodes[x]||(nodes[x]=fake()),getElementById:x=>nodes['#'+x]||(nodes['#'+x]=fake()),querySelectorAll:()=>[],addEventListener:noop,createElement:fake,head:fake()};
+const ctx={document,localStorage:{getItem:()=>null,setItem:noop},window:{},console,Math,JSON,Number,String,Array,Object,Date,Intl,setTimeout:noop,clearTimeout:noop};vm.createContext(ctx);
+for(let file of ['game.js','economy.js','expansion.js','world.js','systems.js','minigames.js','platform.js','simulation_v8.js','finance_v9.js','strategy_v10.js','contracts_v11.js','deep_v13.js','business_v14.js','youtube_v15.js','video_editor_v16.js','youtube_business_v17.js','realism_v18.js'])vm.runInContext(fs.readFileSync(__dirname+'/'+file,'utf8'),ctx);
+const ex=x=>vm.runInContext(x,ctx);
+assert.equal(ex('expense18().аренда'),150);
+assert(ex("changeRegion18('moscow')"));assert.equal(ex('expense18().аренда'),317);assert.equal(ex('WORLD.housing.dorm.rent'),9500);
+assert(ex('monthlyBudget18().month')>0);
+let old=ex('S.day');ex('S.cash=100000;advanceDay()');assert.equal(ex('S.day'),old+1);assert(ex("S.ledger.filter(x=>x.day===S.day&&x.source==='Личные расходы: аренда').length")===1);
+ex('book("Оплата клиентов",10000,"Покупатель","Тест")');let id=ex('S.ledger[S.ledger.length-1].id');assert(ex(`classifyReceipt18(${id},'individual')`));assert.equal(ex('annualTax18().due'),400);let before=ex('S.cash');ex('payNpd18()');assert.equal(ex('S.cash'),before-400);ex('payNpd18()');assert.equal(ex('S.cash'),before-400);
+ex('S.day=400;book("Оплата клиентов",2000,"Бизнес","Тест")');id=ex('S.ledger[S.ledger.length-1].id');assert(ex(`classifyReceipt18(${id},'business')`));assert.equal(ex('annualTax18().due'),120);
+assert(ex('realismScreen18().includes("Ростов-на-Дону")'));ex("tab='realism';render()");assert(nodes['#main'].innerHTML.includes('Учебный кабинет'));
+console.log('PASS v18: city basket, housing sync, no duplicate daily rent, NPD 4/6, year boundary, no double tax payment, UI');

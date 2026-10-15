@@ -1,0 +1,15 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const noop=()=>{};function fake(){return {textContent:'',innerHTML:'',dataset:{},classList:{add:noop,remove:noop,toggle:noop},addEventListener:noop,querySelector:()=>null,querySelectorAll:()=>[],insertAdjacentHTML:noop,insertBefore:noop,style:{},focus:noop,setSelectionRange:noop}};
+const d={};const document={querySelector:q=>d[q]||(d[q]=fake()),querySelectorAll:()=>[],addEventListener:noop,createElement:fake};const ctx={document,localStorage:{getItem:()=>null,setItem:noop},window:{},console,Math,JSON,Number,String,Array,Object,Date,Intl,setTimeout:noop,clearTimeout:noop};vm.createContext(ctx);
+for(const file of ['game.js','economy.js','expansion.js','world.js'])vm.runInContext(fs.readFileSync(__dirname+'/'+file,'utf8'),ctx);
+const run=x=>vm.runInContext(x,ctx);
+assert(run('worldRoom().includes("world-scene")'));
+assert(run('offersScreen().includes("Биржа")'));
+assert(run('Object.keys(houseExpenses()).length')===5);
+run('S.cash=300000');let n=run('net()');run("moveHouse('room')");assert.equal(run('worldState().home'),'room');assert.equal(run('net()'),n-22000,'deposit must be an asset, moving fee is expense');
+run("claimMission('start')");assert.equal(run('worldState().claimed.length'),0);
+run('S.workCount=1');let before=run('S.cash');run("claimMission('start')");assert.equal(run('S.cash'),before+700);run("claimMission('start')");assert.equal(run('S.cash'),before+700,'no double rewards');
+let day=run('S.day');run('advanceDay()');assert.equal(run('S.day'),day+1);assert(run("S.ledger.some(x=>x.source==='Личные расходы: аренда')"));assert(run('worldState().opportunities.length')>0);
+run("tab='home';render()");assert(d['#main'].innerHTML.includes('world-scene'));
+run("tab='household';render()");assert(d['#main'].innerHTML.includes('Дневная смета'));
+console.log('PASS v0.6: scene, housing, refundable deposit, ledger categories, quests, board and screens');

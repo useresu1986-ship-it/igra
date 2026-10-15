@@ -1,0 +1,22 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),noop=()=>{};
+function fake(){return {textContent:'',innerHTML:'',dataset:{},classList:{add:noop,remove:noop,toggle:noop},addEventListener:noop,insertAdjacentHTML:noop,insertBefore:noop,querySelector:()=>null,querySelectorAll:()=>[],style:{},focus:noop,setSelectionRange:noop}}
+const nodes={},document={querySelector:q=>nodes[q]||(nodes[q]=fake()),querySelectorAll:()=>[],getElementById:q=>nodes['#'+q]||(nodes['#'+q]=fake()),createElement:fake,addEventListener:noop,head:fake()};
+const ctx={document,localStorage:{getItem:()=>null,setItem:noop},window:{},console,Math,JSON,Number,String,Array,Object,Date,Intl,setTimeout:noop,clearTimeout:noop};vm.createContext(ctx);
+for(const [,file] of fs.readFileSync(__dirname+'/index.html','utf8').matchAll(/<script src="([^"]+)"/g))vm.runInContext(fs.readFileSync(__dirname+'/'+file,'utf8'),ctx,{filename:file});
+const ex=s=>vm.runInContext(s,ctx);
+ex("S.cash=10000;S.debt=0;S.day=20;ensureEconomy().receivables=[{gross:4000,due:22,project:'p0'}]");
+const snap=ex('JSON.stringify({cash:S.cash,debt:S.debt,ledger:S.ledger.length,receivables:ensureEconomy().receivables})');
+let no=ex("riskProjection21({days:7,collection:0,shock:'base'})");
+let yes=ex("riskProjection21({days:7,collection:100,shock:'base'})");
+assert.equal(no.totalExpected,0);
+assert.equal(yes.totalExpected,4000);
+assert(yes.final.cash>=no.final.cash);
+assert.equal(ex("riskProjection21({days:7,collection:100,shock:'repair'}).totalOut")-yes.totalOut,15000);
+assert.equal(ex("riskProjection21({days:7,collection:100,shock:'late'}).totalExpected"),0);
+assert.equal(ex('JSON.stringify({cash:S.cash,debt:S.debt,ledger:S.ledger.length,receivables:ensureEconomy().receivables})'),snap);
+assert.throws(()=>ex("riskProjection21({days:-2})"));
+assert.throws(()=>ex("riskProjection21({collection:101})"));
+ex("tab='risk21';render()");
+assert(nodes['#main'].innerHTML.includes('Стресс-тест'));
+console.log('PASS v21: no mutations, invoice collection, delay, shock, validation, screen');
