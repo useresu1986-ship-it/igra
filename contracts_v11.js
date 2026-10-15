@@ -5,8 +5,8 @@ function newOffers11(){const C=contracts11();if(C.lastDay===S.day)return;C.offer
 function takeContract11(id){const C=contracts11();newOffers11();const o=C.offers.find(x=>x.id===Number(id)&&!x.taken&&x.expires>=S.day);if(!o||C.active)return false;const j=WORK.find(x=>x.id===o.job);if(!j||S.hours<j.hours||S.energy<15)return false;C.active={...o};startWork(j.id);if(!modal){C.active=null;return false}return true}
 const priorContractResult11=workResult;
 workResult=function(success){const C=contracts11(),active=C.active;if(!active||!modal||active.job!==modal.id)return priorContractResult11(success);
-C.active=null;const start=S.ledger.length;priorContractResult11(success);
-const item=S.ledger.slice(start).find(x=>x.category==='Оплата труда'&&x.source===WORK.find(j=>j.id===active.job)?.name);
+C.active=null;const start=S.nextLedgerId;priorContractResult11(success);
+const item=S.ledger.find(x=>x.id>=start&&x.category==='Оплата труда'&&x.source===WORK.find(j=>j.id===active.job)?.name);
 if(!item)return;
 const job=WORK.find(j=>j.id===active.job);const quotedAmount=Math.max(0,Math.round(active.quote*(item.amount/job.base)));
 book('Перевод в дебиторскую задолженность',-item.amount,job.name,'Выплата согласована, но ещё не получена');

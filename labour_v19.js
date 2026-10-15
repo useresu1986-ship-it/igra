@@ -4,10 +4,10 @@ function labour19(){const X=ext();if(!X.labour19)X.labour19={sessions:[]};return
 function sessions19(){return labour19().sessions}
 const previousWorkResult19=workResult;
 workResult=function(success){
- const job=WORK.find(x=>x.id===modal?.id),before=S.ledger.length,day=S.day;
+ const job=WORK.find(x=>x.id===modal?.id),before=S.nextLedgerId,day=S.day;
  if(!job)return previousWorkResult19(success);
  const result=previousWorkResult19(success);
- const events=S.ledger.slice(before);
+ const events=S.ledger.filter(x=>x.id>=before);
  const gross=events.filter(x=>x.amount>0&&['Оплата труда','Премия за заказ','Корректировка заказа'].includes(x.category)).reduce((n,x)=>n+x.amount,0);
  const costs=-events.filter(x=>x.amount<0&&x.category==='Рабочие издержки').reduce((n,x)=>n+x.amount,0);
  const unsettled=events.filter(x=>/договор|сч[её]т/i.test(x.category||'')).length>0;
