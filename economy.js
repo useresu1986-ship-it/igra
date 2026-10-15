@@ -5,8 +5,57 @@ function ensureEconomy(){if(!S.economy)S.economy={receivables:[],stats:{},losses
 ensureEconomy();
 function econPost(cat,amount,source,note,project){book(cat,amount,source,note,project)}
 function econInvoice(id,amount,label,days){let E=ensureEconomy();let inv={id:E.seq++,project:id,gross:Math.max(0,Math.round(amount)),created:S.day,due:S.day+days,label};E.receivables.push(inv);notice('Выставлен счёт: '+label+' · '+money(inv.gross)+' · оплата день '+inv.due);return inv;}
-function collectInvoices(){const E=ensureEconomy();let unpaid=[];for(const inv of E.receivables){if(inv.due>S.day){unpaid.push(inv);continue}let risk= PROJECTS.find(x=>x.id===inv.project)?.type==='agency'?.06:.025;if(Math.random()<risk){E.losses+=inv.gross;notice('Клиент не оплатил счёт '+money(inv.gross)+'; списан как риск неплатежа');continue;}econPost('Оплата клиентов',inv.gross,inv.label,'Погашена дебиторская задолженность #'+inv.id,inv.project);let p=pr(inv.project);if(p?.metrics)p.metrics.paidOrders++;}E.receivables=unpaid;}
+function paidInvoiceIds(){
+ const ids=new Set();
+ for(const x of S.ledger){if(x.category!=='Оплата клиентов'||x.amount<=0)continue;
+  const id=x.invoiceId??/^Погашена дебиторская задолженность #(\d+)$/.exec(x.note||'')?.[1];
+  if(id!=null)ids.add(String(id));
+ }
+ return ids;
+}
+function collectInvoices(){
+ const E=ensureEconomy(),settled=E.invoiceSettlements||(E.invoiceSettlements={}),seen=new Set(),unpaid=[];
+ // Старые оплаты узнаём по сохранённой ссылке в проводке, без повторного начисления.
+ for(const id of paidInvoiceIds())settled[id]='paid';
+ for(const inv of E.receivables){
+  const key=inv.id==null?inv:String(inv.id);if(seen.has(key))continue;seen.add(key);
+  if(settled[key]||!['pending','disputed'].includes(inv.status||'pending'))continue;
+  if(inv.status==='disputed'||inv.due>S.day){unpaid.push(inv);continue;}
+  if(!Number.isFinite(Number(inv.gross))||Number(inv.gross)<=0)continue;
+  const risk=PROJECTS.find(x=>x.id===inv.project)?.type==='agency'?.06:.025;
+  if(Math.random()<risk){E.losses+=Number(inv.gross);if(inv.id!=null)settled[key]='lost';notice('Клиент не оплатил счёт '+money(inv.gross)+'; списан как риск неплатежа');continue;}
+  econPost('Оплата клиентов',Number(inv.gross),inv.label,'Погашена дебиторская задолженность #'+inv.id,inv.project);
+  if(inv.id!=null){S.ledger.at(-1).invoiceId=inv.id;settled[key]='paid';}
+  const p=pr(inv.project);if(p?.metrics)p.metrics.paidOrders++;
+ }
+ E.receivables=unpaid;
+}
+// Чтение обязательств не проводит деньги и не меняет сохранение. Пространства ID раздельны.
+function financialReceivables({forecast=false}={}){
+ const E=S.economy||{},seen=new Set(),rows=[],paid=paidInvoiceIds();
+ const add=(r,kind)=>{if(!r||!Number.isFinite(Number(r.gross))||Number(r.gross)<=0)return;
+  const status=String(r.status||'pending').toLowerCase();if(!['pending','disputed'].includes(status)||(forecast&&status==='disputed'))return;
+  const key=r.id==null?r:kind+':'+r.id;if(seen.has(key))return;seen.add(key);rows.push({...r,gross:Number(r.gross),kind,created:r.created??r.day});};
+ for(const r of E.receivables||[])if(!E.invoiceSettlements?.[r.id]&&!paid.has(String(r.id)))add(r,'invoice');
+ if(typeof contractRecords11==='function')for(const r of contractRecords11())if(r.queued)add(r,'contract');
+ return rows;
+}
+// Техническая выплата и её точная отмена не являются выручкой/расходом.
+// Старые пары распознаются по порядку, дню, источнику и сумме; журнал не переписывается.
+function actualFinancialRows(){
+ const excluded=new Set(),available=new Map();
+ for(const x of S.ledger){
+  const key=x.day+'|'+x.source+'|'+Math.abs(x.amount);
+  if(x.category==='Оплата труда'&&x.amount>0){if(!available.has(key))available.set(key,[]);available.get(key).push(x);}
+  if(x.category==='Перевод в дебиторскую задолженность'&&x.amount<0){
+   const list=available.get(key)||[],n=x.reversalOf==null?list.length-1:list.findIndex(r=>r.id===x.reversalOf);
+   if(n>=0){const [original]=list.splice(n,1);excluded.add(original);excluded.add(x);}
+  }
+ }
+ return S.ledger.filter(x=>!x.contractAccrual&&!excluded.has(x));
+}
 function projectType(id){return PROJECTS.find(p=>p.id===id)?.type||'unknown'}
+function dailyProjectCharges(cfg,p){return {upkeep:cfg.upkeep,staff:(p.staff||0)*650,traffic:cfg.type==='ads'&&p.posts>0?Math.round(cfg.upkeep*.8):0};}
 function runProjectDay(id,p){const cfg=PROJECTS.find(x=>x.id===id),m=p.metrics; if(!cfg)return;const quality=Math.min(1.8,.50+p.posts*.035),staffEffect=1+Math.min(4,p.staff)*.22;const decay=(cfg.type==='media'||cfg.type==='music')?.997:.986;
  p.audience=Math.max(0,Math.round(p.audience*decay));m.followers=p.audience;
  if(cfg.type==='media'||cfg.type==='music'){
@@ -46,7 +95,7 @@ function runProjectDay(id,p){const cfg=PROJECTS.find(x=>x.id===id),m=p.metrics; 
    if(demand>0){let gross=Math.round(demand*cfg.potential*rnd(.5,1.2));let cost=Math.round(gross*(.54));econPost('Продажи',gross,cfg.name,'Валовая выручка',id);econPost('Себестоимость',-cost,cfg.name,'Закупка товара / ингредиенты / логистика (модель)',id);let returns=Math.random()<.08?Math.round(gross*.13):0;if(returns){m.returns++;econPost('Возврат',-returns,cfg.name,'Возврат покупателю',id);}}
  }else if(cfg.type==='ads'){
    // No automatic arbitrage profit: test budget and uncertain conversion outcomes.
-   if(p.posts>0){let spend=Math.round(cfg.upkeep*.8);econPost('Покупка трафика',-spend,cfg.name,'Показ рекламы и клики (модель)',id);let payout=Math.round(spend*rnd(.48,1.35));if(payout>0)econInvoice(id,payout,'CPA-партнёрская программа',Math.ceil(rnd(2,8)));}
+   if(p.posts>0){let spend=dailyProjectCharges(cfg,p).traffic;econPost('Покупка трафика',-spend,cfg.name,'Показ рекламы и клики (модель)',id);let payout=Math.round(spend*rnd(.48,1.35));if(payout>0)econInvoice(id,payout,'CPA-партнёрская программа',Math.ceil(rnd(2,8)));}
  }
 }
 // Replaces the old universal passive-income loop with activity-dependent sector logic.
@@ -61,9 +110,9 @@ advanceDay=function(){ensureEconomy();S.day++;S.hours=12;S.energy=clamp(S.energy
 };
 const previousProduce=produce;
 produce=function(id){const p=pr(id);if(!p?.open)return;const before=p.posts;previousProduce(id);if(p.posts>before){ensureEconomy();p.metrics.content++;p.metrics.followers=p.audience;}}
-function outstanding(){return ensureEconomy().receivables.reduce((n,x)=>n+x.gross,0)}
-function classify(x){if(x.amount>0)return 'income';if(['Приобретение активов','Инвестиции','Найм и настройка'].includes(x.category))return 'capital';if(x.category==='Личная жизнь'||x.category==='Непредвиденный расход')return 'living';return 'operating'}
-function incomeStatement(days=30,project='all'){const rows=S.ledger.filter(x=>S.day-x.day<days&&(project==='all'||x.project===project));let income=0,operating=0,living=0,capital=0;for(const x of rows){if(x.amount>0)income+=x.amount;else if(classify(x)==='capital')capital-=x.amount;else if(classify(x)==='living')living-=x.amount;else operating-=x.amount;}let invoices=ensureEconomy().receivables.filter(x=>S.day-x.created<days&&(project==='all'||x.project===project));return {income,operating,living,capital,operatingResult:income-operating,personalResult:income-operating-living,netCash:income-operating-living-capital,receivable:invoices.reduce((a,x)=>a+x.gross,0)}}
+function outstanding(){return financialReceivables().reduce((n,x)=>n+x.gross,0)}
+function classify(x){if(x.amount>0)return 'income';if(['Приобретение активов','Инвестиции','Найм и настройка','Депозит за жильё'].includes(x.category))return 'capital';if(x.category==='Личная жизнь'||x.category==='Непредвиденный расход')return 'living';return 'operating'}
+function incomeStatement(days=30,project='all'){const rows=actualFinancialRows().filter(x=>S.day-x.day<days&&(project==='all'||x.project===project));let income=0,operating=0,living=0,capital=0;for(const x of rows){if(x.amount>0)income+=x.amount;else if(classify(x)==='capital')capital-=x.amount;else if(classify(x)==='living')living-=x.amount;else operating-=x.amount;}let invoices=financialReceivables().filter(x=>S.day-x.created<days&&(project==='all'||x.project===project));return {income,operating,living,capital,operatingResult:income-operating,personalResult:income-operating-living,netCash:income-operating-living-capital,receivable:invoices.reduce((a,x)=>a+x.gross,0)}}
 function economics(){const E=ensureEconomy(),v=incomeStatement(period,selectedFinance),all=incomeStatement(999999,selectedFinance);let active=PROJECTS.filter(x=>pr(x.id)?.open);return header('Экономический аудит','Прибыль, расходы на жизнь, инвестиции и неоплаченные счета — отдельно')+`<div class="toolbar"><select id="period"><option value="7" ${period===7?'selected':''}>7 дней</option><option value="30" ${period===30?'selected':''}>30 дней</option><option value="90" ${period===90?'selected':''}>90 дней</option><option value="99999" ${period===99999?'selected':''}>Вся история</option></select><select id="finproject"><option value="all" ${selectedFinance==='all'?'selected':''}>Вся экономика</option>${active.map(x=>`<option value="${x.id}" ${selectedFinance===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div><div class="grid four">${[['Получено денег',v.income],['Операционные расходы',-v.operating],['Личные расходы',-v.living],['Денежный результат',v.netCash]].map(([t,n])=>`<div class="card"><div class="mini">${t}</div><div class="statnum ${n<0?'neg':'pos'}">${money(n)}</div></div>`).join('')}</div><div class="grid"><div class="card"><h2>Разбор денежных потоков</h2><table class="audit-table"><tr><td>Поступления</td><td>${money(v.income)}</td></tr><tr><td>Операционные затраты</td><td>${money(v.operating)}</td></tr><tr><td>Операционный денежный результат</td><td>${money(v.operatingResult)}</td></tr><tr><td>Личные расходы</td><td>${money(v.living)}</td></tr><tr><td>Инвестиции и закупки оборудования</td><td>${money(v.capital)}</td></tr><tr><th>Изменение денежных средств</th><th>${money(v.netCash)}</th></tr><tr><td>Неоплаченные счета (всего)</td><td>${money(outstanding())}</td></tr><tr><td>Списанные неоплаты (за всё время)</td><td>${money(E.losses)}</td></tr></table></div><div class="card"><h2>Баланс игрока</h2><table class="audit-table"><tr><td>Деньги</td><td>${money(S.cash)}</td></tr><tr><td>Оценка имущества и предприятий</td><td>${money(assetValue())}</td></tr><tr><td>Дебиторская задолженность</td><td>${money(outstanding())}</td></tr><tr><td>Долги</td><td>${money(S.debt)}</td></tr><tr><th>Расширенный капитал</th><th>${money(net()+outstanding())}</th></tr></table><p class="mini">Оценки перепродажи условные. Учёт вложений и поступлений кассовый; это не полноценная бухгалтерская отчётность по стандартам РСБУ.</p></div></div><div class="card"><h2>Экономика каждого проекта</h2><div class="listcards">${active.map(x=>{let p=pr(x.id),f=incomeStatement(99999,x.id),m=p.metrics||{};return `<div class="card job"><b>${x.icon} ${esc(x.name)}</b><div class="mini">Публикаций: ${p.posts} · Аудитория: ${(p.audience||0).toLocaleString('ru-RU')}</div><div class="mini">Просмотры: ${(m.views||0).toLocaleString('ru-RU')} · Заказы: ${m.orders||0} · Возвраты: ${m.returns||0}</div><div class="mini">Поступления: ${money(f.income)} · Оплаченные затраты: ${money(f.operating+f.capital)}</div><div class="mini">Результат денежных операций: ${money(f.netCash)}</div></div>`}).join('')||'<p class="muted">Пока нет запущенных проектов.</p>'}</div></div><div class="card"><h2>Методология и ограничения</h2><p>Ставки оплаты, спрос, вероятность продаж, цены и расходы — <b>модельные допущения</b>, а не проверенные рыночные медианы. Дебиторская задолженность здесь служит игровым показателем и пока не включена в стандартный капитал на верхней панели. Реальный налоговый учёт и расчёт себестоимости по партиям ещё не реализованы.</p><p>Источники правил: <a href="https://npd.nalog.ru/" target="_blank" rel="noopener">ФНС — НПД</a>, <a href="https://yandex.ru/dev/games/doc/ru/sdk/sdk-adv" target="_blank" rel="noopener">Яндекс Игры — реклама</a>. Эти документы подтверждают правила, <b>но не игровую доходность</b>.</p></div>`;}
 const previousRender=render;
 render=function(){ensureEconomy();if(tab==='econ'){document.querySelector('#cash').textContent=money(S.cash);document.querySelector('#day').textContent=S.day;document.querySelector('#net').textContent=money(net()+outstanding());document.querySelector('#energy').textContent=S.energy+'%';document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelector('#main').innerHTML=economics();}else previousRender();};

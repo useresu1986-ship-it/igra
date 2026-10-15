@@ -23,6 +23,9 @@
   if(n<0)return {ok:false,error:'Сотрудник не найден'};
   t.members.splice(n,1);save();render();return {ok:true};
  }
+ // Единая сумма для проводки, интерфейса и денежного сценария (book округляет до рублей).
+ function dailyWage(member){const role=ROLES[member.role];return role?-Math.round(-(role.wage+Math.max(0,Number(member.dailyBonus)||0))):0;}
+ function dailyPayroll(id){return (pr(id)?.team27?.members||[]).reduce((sum,m)=>sum+dailyWage(m),0);}
  function workday(){
   const summary=[];
   for(const cfg of PROJECTS){
@@ -31,10 +34,10 @@
    for(const m of t.members){
     const r=ROLES[m.role];if(!r)continue;
     const morale=Number.isFinite(Number(m.morale))?Number(m.morale):60;
-    const bonus=Math.max(0,Number(m.dailyBonus)||0);
-    book('Зарплата команды',-(r.wage+bonus),'Команда: '+cfg.name,'Ежедневная оплата: '+r.name,cfg.id);
+    const wage=dailyWage(m);
+    book('Зарплата команды',-wage,'Команда: '+cfg.name,'Ежедневная оплата: '+r.name,cfg.id);
     let action='Оклад выплачен';
-    if(morale<20){action='Срыв смены: низкая мотивация';summary.push({project:cfg.id,role:m.role,memberId:m.id,action,wage:r.wage+bonus});continue;}
+    if(morale<20){action='Срыв смены: низкая мотивация';summary.push({project:cfg.id,role:m.role,memberId:m.id,action,wage});continue;}
     if(m.role==='marketing'){
      const skillBoost=1+0.1*Math.min(3,Number(m.training)||0)+0.1*Math.min(3,Math.floor((Number(m.xp)||0)/5));
      const gain=Math.max(1,Math.round((4+Math.sqrt(p.posts||0)*3)*skillBoost));
@@ -58,7 +61,7 @@
       action=res.ok?'Создан заказ на 5 шт.':res.error;
      }else action='Запас достаточен';
     }
-    summary.push({project:cfg.id,role:m.role,memberId:m.id,action,wage:r.wage+bonus});
+    summary.push({project:cfg.id,role:m.role,memberId:m.id,action,wage});
    }
    t.history.push({day:S.day,summary:summary.filter(x=>x.project===cfg.id)});
    t.history=t.history.slice(-30);
@@ -72,10 +75,10 @@
   return header('Команда и делегирование','Нанимай специалистов, контролируй оклады и автоматизируй рутинные задачи')+
    `<div class="notice">Оклады и результаты работы — игровые параметры, не рыночная статистика. Новая команда учитывается отдельно от прежнего счётчика «Сотрудники».</div>`+
    (active.length?active.map(c=>{
-    const t=team(c.id),wages=t.members.reduce((a,m)=>a+(ROLES[m.role]?.wage||0),0);
+    const t=team(c.id),wages=dailyPayroll(c.id);
     return `<div class="card" style="margin-top:14px"><h2>${esc(c.name)}</h2><p>Специалистов: <b>${t.members.length}/6</b> · Оклады в день: <b>${money(wages)}</b> · Резерв на 7 дней: <b>${money(wages*7)}</b></p>
     <div class="toolbar"><label>Новая должность <select data-role27="${c.id}">${Object.entries(ROLES).filter(([k,r])=>!r.commerce||c.type==='commerce').map(([k,r])=>`<option value="${k}">${r.name} · ${money(r.wage)}/день</option>`).join('')}</select></label><button class="primary" data-hire27="${c.id}">Нанять</button></div>
-    ${t.members.length?t.members.map(m=>`<div class="line"><span>${esc(ROLES[m.role]?.name||m.role)} · ${money(ROLES[m.role]?.wage||0)}/день</span><button class="ghost" data-fire27="${c.id}" data-member="${m.id}">Уволить</button></div>`).join(''):'<p class="mini">Команда ещё не нанята</p>'}
+    ${t.members.length?t.members.map(m=>`<div class="line"><span>${esc(ROLES[m.role]?.name||m.role)} · ${money(dailyWage(m))}/день</span><button class="ghost" data-fire27="${c.id}" data-member="${m.id}">Уволить</button></div>`).join(''):'<p class="mini">Команда ещё не нанята</p>'}
     <p class="mini">${t.history.at(-1)?.summary.map(x=>ROLES[x.role].name+': '+x.action).join(' · ')||'Отчёт появится после следующего игрового дня.'}</p></div>`;
    }).join(''):'<div class="card">Сначала откройте хотя бы один бизнес-проект.</div>');
  }
@@ -101,5 +104,5 @@
   }else if(b.dataset.fire27){res=fireRole(b.dataset.fire27,b.dataset.member);}
   if(res)toast(res.ok?'Команда обновлена':res.error);
  });
- window.Team27={ROLES,team,hireRole,fireRole,workday,screen};
+ window.Team27={ROLES,team,hireRole,fireRole,workday,screen,dailyWage,dailyPayroll};
 })();

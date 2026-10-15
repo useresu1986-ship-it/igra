@@ -4,16 +4,17 @@
 function cashAudit20(period=0){
   const recent = x => period===0 || S.day-x.day<period;
   const base=(labour19().sessions||[]).filter(recent);
-  const contracts=(contracts11().history||[]).filter(recent);
+  const contracts=contractRecords11().filter(recent);
   const out=new Map();
   const ensure=id=>{if(!out.has(id))out.set(id,{id,shifts:0,hours:0,earned:0,received:0,costs:0,waiting:0,disputed:0,lost:0});return out.get(id)};
   // Non-contract jobs are settled immediately. Contract observations are replaced
   // with their agreed contract amount; reversing book() entries are not income.
   const contractJobsByDay=new Map();
-  for(const c of contracts){const k=c.day+'|'+c.job;contractJobsByDay.set(k,(contractJobsByDay.get(k)||0)+1)}
+  for(const c of contracts){if(base.some(s=>s.contractId===c.id))continue;const k=c.day+'|'+c.job;contractJobsByDay.set(k,(contractJobsByDay.get(k)||0)+1)}
   for(const s of base){const r=ensure(s.job),k=s.day+'|'+s.job;
     r.shifts++;r.hours+=Math.max(0,s.hours||0);r.costs+=Math.max(0,s.costs||0);
     const pendingCount=contractJobsByDay.get(k)||0;
+    if(s.contractId!=null)continue;
     if(pendingCount){contractJobsByDay.set(k,pendingCount-1)}else{
       r.earned+=Math.max(0,s.gross||0);r.received+=Math.max(0,s.gross||0);
     }

@@ -13,35 +13,14 @@ function riskProjection21({days=Risk21.days,collection=Risk21.collection,shock=R
  if(!Number.isInteger(days)||days<1||days>90)throw Error('Недопустимый горизонт');
  if(!Number.isFinite(collection)||collection<0||collection>100)throw Error('Недопустимый процент оплат');
  if(!SHOCK21[shock])throw Error('Недопустимый сценарий');
- const sh=SHOCK21[shock],daily=v9DailyCosts(),receivables=ensureEconomy().receivables||[];
- let cash=Number(S.cash)||0, debt=Number(S.debt)||0, firstDeficit=null;
- const rows=[],receipts=receivables.filter(r=>r&&Number.isFinite(Number(r.gross))&&Number(r.gross)>0&&
-   !['paid','lost','disputed','cancelled','written_off'].includes(String(r.status||'pending').toLowerCase()));
- const schedule=new Map();
- for(const r of receipts){
-   const due=Math.max(S.day+1,Number.isFinite(Number(r.due))?Number(r.due)+sh.delay:S.day+1);
-   schedule.set(due,(schedule.get(due)||0)+Number(r.gross));
- }
- for(let i=1;i<=days;i++){
-   const due=schedule.get(S.day+i)||0;
-   const expected=Math.round(due*collection/100);
-   const exceptional=i===1?sh.extra:0;
-   const out=daily.total+exceptional;
-   cash+=expected-out;
-   if(cash<0){if(firstDeficit===null)firstDeficit=i;debt+=-cash;cash=0;}
-   if(debt>0)debt+=Math.max(1,Math.round(debt*.0006));
-   rows.push({day:S.day+i,expected,out,cash:Math.round(cash),debt:Math.round(debt)});
- }
- return {rows,firstDeficit,final:rows[rows.length-1],daily,
-  totalExpected:rows.reduce((a,r)=>a+r.expected,0),
-  totalOut:rows.reduce((a,r)=>a+r.out,0),
-  initialCash:Number(S.cash)||0, eligibleInvoices:receipts.length,
-  shock:sh.label,collection};
+ const sh=SHOCK21[shock];
+ return {...v9ProjectCash({days,collection,delay:sh.delay,extra:sh.extra}),shock:sh.label};
 }
+
 function riskScreen21(){
  const R=riskProjection21();
  return header('Стресс-тест финансов','Что будет, если платежи задержатся или возникнут непредвиденные расходы?')+
- `<div class="card"><h2>Условия сценария</h2><p class="mini">Модель без новых заказов и продаж. Ни одна настройка не изменяет игровое сохранение. Вероятности не выдаются за рыночную статистику.</p>
+ `<div class="card"><h2>Условия сценария</h2><p class="mini">Модель без новых заказов и продаж. Оклады и премии обеих систем персонала учтены при неизменном составе команды. Будущие закупки, индексация цен и ручная уплата налогов не предсказываются; уже уплаченные налоги повторно не списываются. Спорные счета показаны в дебиторской задолженности, но не считаются гарантированным поступлением. Ни одна настройка не изменяет игровое сохранение. Вероятности не выдаются за рыночную статистику.</p>
  <div class="toolbar"><label>Горизонт <select id="risk-days">${[7,14,30,60,90].map(n=>`<option value="${n}" ${Risk21.days===n?'selected':''}>${n} дней</option>`).join('')}</select></label>
  <label>Доля счетов, которые будут оплачены <select id="risk-collection">${[0,25,50,75,100].map(n=>`<option value="${n}" ${Risk21.collection===n?'selected':''}>${n}%</option>`).join('')}</select></label>
  <label>Событие <select id="risk-shock">${Object.entries(SHOCK21).map(([k,v])=>`<option value="${k}" ${Risk21.shock===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></label></div></div>

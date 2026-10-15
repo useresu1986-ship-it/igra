@@ -22,8 +22,9 @@ advanceDay=function(){
  collectInvoices();
  for(const [id,p] of Object.entries(S.projects)){
   if(!p.open)continue;const cfg=PROJECTS.find(x=>x.id===id);if(!cfg)continue;
-  econPost('Операционные расходы',-cfg.upkeep,cfg.name,'Ежедневные постоянные расходы (игровое допущение)',id);
-  if(p.staff)econPost('Зарплата персонала',-p.staff*650,cfg.name,'Ежедневная выплата персоналу (игровое допущение)',id);
+  const charges=dailyProjectCharges(cfg,p);
+  econPost('Операционные расходы',-charges.upkeep,cfg.name,'Ежедневные постоянные расходы (игровое допущение)',id);
+  if(p.staff)econPost('Зарплата персонала',-charges.staff,cfg.name,'Ежедневная выплата персоналу (игровое допущение)',id);
   runProjectDay(id,p);
  }
  processApplications();

@@ -11,11 +11,13 @@ workResult=function(success){
  const gross=events.filter(x=>x.amount>0&&['Оплата труда','Премия за заказ','Корректировка заказа'].includes(x.category)).reduce((n,x)=>n+x.amount,0);
  const costs=-events.filter(x=>x.amount<0&&x.category==='Рабочие издержки').reduce((n,x)=>n+x.amount,0);
  const unsettled=events.filter(x=>/договор|сч[её]т/i.test(x.category||'')).length>0;
- const obs={day,job:job.id,gross,costs,hours:job.hours,net:gross-costs,success:!!success,unsettled};
+ const contract=(S.economy?.contracts11?.history||[]).find(x=>x.wageId>=before&&x.job===job.id);
+ const obs={contractId:contract?.id,day,job:job.id,gross,costs,hours:job.hours,net:gross-costs,success:!!success,unsettled};
  sessions19().push(obs);if(sessions19().length>2500)sessions19().splice(0,sessions19().length-2500);
  save();return result;
 };
 function labourStats19(period=30){
+ if(typeof cashAudit20==='function')return cashAudit20(period).map(r=>({job:r.id,count:r.shifts,hours:r.hours,gross:r.received,costs:r.costs,net:r.cashNet,hourly:r.hourlyReceived,success:sessions19().filter(s=>s.job===r.id&&(period===0||S.day-s.day<period)&&s.success).length,unsettled:Number(r.waiting+r.disputed>0)}));
  const observations=sessions19().filter(x=>period===0||S.day-x.day<period), map=new Map();
  for(const o of observations){let r=map.get(o.job);if(!r){r={job:o.job,count:0,gross:0,costs:0,net:0,hours:0,success:0,unsettled:0};map.set(o.job,r)}r.count++;r.gross+=o.gross;r.costs+=o.costs;r.net+=o.net;r.hours+=o.hours;r.success+=Number(o.success);r.unsettled+=Number(o.unsettled)}
  return [...map.values()].map(x=>({...x,hourly:x.hours?x.net/x.hours:0})).sort((a,b)=>b.count-a.count);
