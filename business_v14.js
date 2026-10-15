@@ -33,21 +33,107 @@
  };
  let session=null;
  function state(){let e=ensureEconomy();if(!e.business14)e.business14={history:[],byProject:{},round:0};return e.business14}
+ // Общие операции товарного учёта. Доступны и историческим сценариям v14.
+ const LIMIT=100,UNIT=420,FEE=.18,SHIP=110;
+ const quantity=n=>Math.max(0,Math.floor(Number(n)||0));
+ const remaining=s=>Math.max(0,s.count-(s.good||0)-(s.damaged||0));
+ function normalizeWarehouse(r){
+  r.stock=quantity(r.stock);r.waitingStock=quantity(r.waitingStock);
+  if(r.stock>LIMIT){r.waitingStock+=r.stock-LIMIT;r.stock=LIMIT;}
+  if(r.warehouseVersion===1)return r;
+  if(!Array.isArray(r.sales)){
+   r.sales=[];
+   const n=quantity(r.refundable),price=Number(r.refundPrice);
+   if(n)r.sales.push({id:'legacy',day:null,count:n,price:Number.isSafeInteger(price)&&price>0?price:null,good:0,damaged:0,channel:'legacy',legacy:true});
+  }
+  if(r.refundable===undefined)r.refundable=r.sales.reduce((n,s)=>n+remaining(s),0);
+  r.warehouseVersion=1;return r;
+ }
+ function warehouseRecord(id){const e=state();if(!e.byProject[id])e.byProject[id]={stock:0,unitsSold:0};return normalizeWarehouse(e.byProject[id]);}
+ function reserved(r){return (r.deliveries||[]).filter(d=>d.status==='transit').reduce((n,d)=>n+quantity(d.count),0);}
+ function capacity(id){const r=warehouseRecord(id),transit=reserved(r);return {limit:LIMIT,stock:r.stock,transit,waiting:r.waitingStock,free:Math.max(0,LIMIT-r.stock-transit-r.waitingStock)};}
+ function flush(r){const n=Math.min(r.waitingStock,Math.max(0,LIMIT-r.stock-reserved(r)));r.stock+=n;r.waitingStock-=n;return n;}
+ function receive(id,n){const r=warehouseRecord(id);r.waitingStock+=n;return flush(r);}
+ function migrateWarehouses(snapshot=S){
+  for(const r of Object.values(snapshot.economy?.business14?.byProject||{})){normalizeWarehouse(r);flush(r);}
+ }
+ function transact(id,action){
+  const r=warehouseRecord(id),before=JSON.stringify(r),cash=S.cash,next=S.nextLedgerId,ledger=S.ledger.slice();
+  try{
+   const result=action(r);
+   if(result.ok)return result;
+   restore();return result;
+  }catch(error){restore();return {ok:false,error:'Товарная операция отменена: '+error.message};}
+  function restore(){S.cash=cash;S.nextLedgerId=next;S.ledger=ledger;for(const key of Object.keys(r))delete r[key];Object.assign(r,JSON.parse(before));}
+ }
+ function quote(id){const r=warehouseRecord(id),price=Number(r.salePrice)||990,fee=Math.round(price*FEE);return {price,fee,margin:price-UNIT-fee-SHIP};}
+ function buyGoods(id,n,source='Закупка товара',note=''){
+  if(!Number.isInteger(n)||![5,10,20].includes(n))return {ok:false,error:'Недопустимая партия'};
+  if(capacity(id).free<n)return {ok:false,error:'Недостаточно места с учётом поставок и товаров в ожидании'};
+  const cost=n*UNIT;if(S.cash<cost)return {ok:false,error:'Не хватает денег на закупку'};
+  return transact(id,()=>{book('Закупка партии',-cost,source,note||`${n} шт. × ${UNIT} ₽`,id);receive(id,n);return {ok:true,cost};});
+ }
+ function sellGoods(id,n,price,source,note,channel='manual'){
+  const r=warehouseRecord(id);
+  if(!Number.isInteger(n)||n<1||r.stock<n)return {ok:false,error:'Недостаточно товара на складе'};
+  if(!Number.isSafeInteger(price)||price<490||price>5000)return {ok:false,error:'Неверная цена продажи'};
+  return transact(id,()=>{
+   book('Товарная выручка',n*price,source,note,id);const saleId=S.ledger.at(-1).id;
+   book('Комиссия площадки',-n*Math.round(price*FEE),source,'18% от цены за штуку (сценарий)',id);
+   book('Логистика',-n*SHIP,source,'110 ₽ за штуку (сценарий)',id);
+   r.stock-=n;r.unitsSold=(Number(r.unitsSold)||0)+n;
+   r.sales.push({id:saleId,day:S.day,count:n,price,good:0,damaged:0,channel});
+   r.refundable=quantity(r.refundable)+n;
+   flush(r);return {ok:true,saleId,revenue:n*price,margin:n*(price-UNIT-Math.round(price*FEE)-SHIP)};
+  });
+ }
+ function refundGoods(id,n,condition='good',saleId){
+  const r=warehouseRecord(id);
+  if(!Number.isInteger(n)||n<1||n>5)return {ok:false,error:'За один раз от 1 до 5 возвратов'};
+  if(!['good','damaged'].includes(condition))return {ok:false,error:'Неверное состояние'};
+  if(quantity(r.refundable)<n)return {ok:false,error:'Нет доступных к возврату продаж'};
+  const candidates=r.sales.filter(s=>remaining(s)>0&&(saleId===undefined||saleId===''||String(s.id)===String(saleId)));
+  let left=n,amount=0;const plan=[];
+  for(const sale of candidates){
+   const count=Math.min(left,remaining(sale));if(!count)continue;
+   if(!Number.isSafeInteger(sale.price)||sale.price<=0)return {ok:false,error:'В старом сохранении нет цены этой продажи: автоматический возврат невозможен'};
+   amount+=count*sale.price;plan.push({sale,count});left-=count;if(!left)break;
+  }
+  if(left)return {ok:false,error:'Продажа уже возвращена или не найдена'};
+  if(S.cash<amount)return {ok:false,error:'Недостаточно денег для возврата'};
+  return transact(id,()=>{
+   book('Возврат покупателю',-amount,'Товарный бизнес','Возврат: '+plan.map(p=>`продажа #${p.sale.id}, ${p.count} шт. × ${p.sale.price} ₽`).join('; '),id);
+   for(const {sale,count} of plan)sale[condition]=(sale[condition]||0)+count;
+   r.refundable-=n;r.returned=(Number(r.returned)||0)+n;
+   const placed=condition==='good'?receive(id,n):0;
+   if(condition==='damaged')r.damaged=quantity(r.damaged)+n;
+   return {ok:true,amount,restocked:placed,waiting:condition==='good'?n-placed:0};
+  });
+ }
+ function commerceRound(id,quality,cfg){
+  return transact(id,()=>{
+   const r=warehouseRecord(id),buy=r.stock<4?10:0;let cost=0;
+   if(buy){const purchase=buyGoods(id,buy,cfg.name,'10 × 420 ₽ (сценарий)');if(!purchase.ok)return purchase;cost=purchase.cost;}
+   const sold=Math.min(r.stock,Math.max(0,Math.round(quality*6))),price=quote(id).price;
+   let earned=0;
+   if(sold){
+    const sale=sellGoods(id,sold,price,cfg.name,'Продано '+sold+' шт.','business');if(!sale.ok)return sale;
+    earned=sale.revenue-sold*Math.round(price*FEE)-sold*SHIP;
+    if(quality<.4){const refund=refundGoods(id,1,'good',sale.saleId);if(!refund.ok)return refund;earned-=refund.amount;}
+   }
+   return {ok:true,cost,earned,summary:`Продано ${sold} шт.; остаток ${r.stock} шт.; выручка ${money(sold*price)} (себестоимость партии оплачена при закупке)`};
+  });
+ }
  function profile(id){let cfg=PROJECTS.find(x=>x.id===id);if(!cfg)return null;return {cfg,scenario:defs[cfg.type]||defs.agency};}
  function start(id){let p=pr(id),cfg=profile(id);if(!p?.open||!cfg)return {ok:false,error:'Сначала открой проект'};if(S.hours<3||S.energy<15)return {ok:false,error:'Нужно 3 ч и 15 энергии'};session={id,type:cfg.cfg.type,stage:0,score:0,answers:[],spent:0};draw();return {ok:true};}
  function draw(){if(!session)return;let cfg=profile(session.id),phase=cfg.scenario.phases[session.stage];let content=`<div class="card"><h3>${cfg.cfg.icon} ${esc(cfg.scenario.title)}</h3><p class="mini">Этап ${session.stage+1}/3 · Репутация решения: ${session.score} · Ставки и вероятности модельные</p><p>${esc(phase.q)}</p><div class="listcards">${phase.opts.map(([v,label])=>`<button class="ghost" style="text-align:left;white-space:normal" data-business14="${esc(v)}">${esc(label)}</button>`).join('')}</div><div class="btnrow"><button class="quiet" data-businesscancel14="1">Отменить задание</button></div></div>`;if(typeof showModal==='function')showModal(content);else document.querySelector('#main').innerHTML=content;}
  function act(choice){if(!session)return {ok:false};let def=profile(session.id).scenario.phases[session.stage],opt=def.opts.find(x=>x[0]===choice);if(!opt)return {ok:false};session.score+=opt[2];session.answers.push(choice);session.stage++;if(session.stage<3){draw();return {ok:true,done:false}}return settle();}
- function settle(){let s=session,p=pr(s.id),cfg=profile(s.id).cfg,quality=clamp((s.score+6)/12,0,1),e=state();if(S.hours<3||S.energy<15){session=null;closeModal();return {ok:false,error:'Недостаточно ресурсов'}}S.hours-=3;S.energy=Math.max(0,S.energy-15);S.stress=clamp(S.stress+4,0,100);p.posts++;p.audience=Math.max(0,(p.audience||0)+Math.round(quality*65+5));ensureEconomy();p.metrics.content++;p.metrics.followers=p.audience;
+ function settle(){let s=session,p=pr(s.id),cfg=profile(s.id).cfg,quality=clamp((s.score+6)/12,0,1),e=state();if(S.hours<3||S.energy<15){session=null;closeModal();return {ok:false,error:'Недостаточно ресурсов'}}
+ let commerce=null;if(s.type==='commerce'){commerce=commerceRound(s.id,quality,cfg);if(!commerce.ok){session=null;closeModal();toast(commerce.error);return commerce;}}
+ S.hours-=3;S.energy=Math.max(0,S.energy-15);S.stress=clamp(S.stress+4,0,100);p.posts++;p.audience=Math.max(0,(p.audience||0)+Math.round(quality*65+5));ensureEconomy();p.metrics.content++;p.metrics.followers=p.audience;
  let cost=0,earned=0,invoice=0,summary='';
  if(s.type==='commerce'){
-   // Physical goods: buy 10 units; unsold stock persists by project.
-   let prev=e.byProject[s.id]||{stock:0,unitsSold:0};let buy=prev.stock<4?10:0;cost=buy*420;if(cost>0&&S.cash<cost){summary='Нужна ликвидность для закупки; товар не закуплен';cost=0;buy=0;}
-   if(cost){book('Закупка партии',-cost,cfg.name,'10 × 420 ₽ (сценарий)',s.id);prev.stock+=buy;}
-   let sold=Math.min(prev.stock,Math.max(0,Math.round(quality*6)));prev.stock-=sold;prev.unitsSold+=sold;
-   let unitPrice=Number(prev.salePrice)||990;
-   let sales=sold*unitPrice,fees=sold*Math.round(unitPrice*.18),log=sold*110,returns=(quality<.4&&sold>0)?unitPrice:0;
-   if(sales){book('Товарная выручка',sales,cfg.name,'Продано '+sold+' шт',s.id);book('Комиссия площадки',-fees,cfg.name,'18% (условный сценарий)',s.id);book('Логистика',-log,cfg.name,'110 ₽/шт (условный сценарий)',s.id);if(returns){book('Возврат покупателю',-returns,cfg.name,'Модель возврата',s.id);prev.stock++;}}
-   e.byProject[s.id]=prev;earned=sales-fees-log-returns;summary=`Продано ${sold} шт.; остаток ${prev.stock} шт.; выручка ${money(sales)} (себестоимость партии оплачена при закупке)`;
+   cost=commerce.cost;earned=commerce.earned;summary=commerce.summary;
  }else if(s.type==='ads'){
    cost=3000;if(S.cash<cost){summary='Недостаточно денег на тест. Кампания не запущена';cost=0;}else{book('Рекламный тест',-cost,cfg.name,'Бюджет 3 000 ₽ (сценарий)',s.id);invoice=Math.round(cost*(.45+quality*.85));econInvoice(s.id,invoice,'CPA: подтверждённые выплаты',3);summary=`Бюджет ${money(cost)}, ожидается ${money(invoice)} через 3 дня; ROI после оплаты зависит от результата`;}
  }else if(s.type==='agency'||s.type==='saas'){
@@ -65,5 +151,6 @@
  const oldRender=render;render=function(){if(tab==='business14'){document.querySelector('#cash').textContent=money(S.cash);document.querySelector('#day').textContent=S.day;document.querySelector('#net').textContent=money(net());document.querySelector('#energy').textContent=S.energy+'%';document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelector('#main').innerHTML=screen();return;}oldRender()};
  const nav=document.querySelector('#nav');if(nav)nav.insertAdjacentHTML('beforeend','<button data-tab="business14">🏢 <span>Бизнес-практикум</span></button>');
  document.addEventListener('click',event=>{let b=event.target.closest('button');if(!b)return;if(b.dataset.businessstart14)start(b.dataset.businessstart14);else if(b.dataset.business14)act(b.dataset.business14);else if(b.dataset.businesscancel14)cancel()});
- window.BusinessV14={defs,state,start,act,cancel,screen,getSession:()=>session,settle};
+ window.BusinessV14={defs,state,start,act,cancel,screen,getSession:()=>session,settle,warehouse:{record:warehouseRecord,capacity,quote,buy:buyGoods,sell:sellGoods,refund:refundGoods,receive,transact,migrateAll:migrateWarehouses,remaining}};
+ migrateWarehouses();
 })();

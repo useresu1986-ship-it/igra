@@ -46,19 +46,14 @@
      const competitive=window.Competition30?window.Competition30.canSell(cfg.id):true;
      if(s.stock>0&&competitive){
       const units=Math.min(s.stock,1+(Number(m.xp)>=15?1:0)+(Number(m.training)>=2?1:0));
-      const fee=s.fee*units,ship=110*units;
-      book('Товарная выручка',s.price*units,'Команда: '+cfg.name,'Продажа оператором',cfg.id);
-      book('Комиссия площадки',-fee,'Команда: '+cfg.name,'Условная комиссия',cfg.id);
-      book('Логистика',-ship,'Команда: '+cfg.name,'Условная доставка',cfg.id);
-      w.stock-=units;w.unitsSold=(Number(w.unitsSold)||0)+units;
-      action='Продано товаров: '+units;
-      if(window.Competition30)window.Competition30.state(cfg.id).sales++;
+      const sale=window.BusinessV14.warehouse.sell(cfg.id,units,s.price,'Команда: '+cfg.name,'Продажа оператором','team');
+      action=sale.ok?'Продано товаров: '+units:sale.error;
+      if(sale.ok&&window.Competition30)window.Competition30.state(cfg.id).sales++;
      }else {action=s.stock>0?'Нет спроса из-за конкуренции':'Нет товара на складе';if(s.stock>0&&window.Competition30)window.Competition30.state(cfg.id).lost++;}
     }
     if(m.role==='procurement'){
-     const w=window.Inventory23.record(cfg.id);
-     const reserved=window.Suppliers26.pending(cfg.id).reduce((a,d)=>a+d.count,0);
-     if((Number(w.stock)||0)+reserved<5){
+     const c=window.BusinessV14.warehouse.capacity(cfg.id);
+     if(c.stock+c.transit+c.waiting<5){
       const res=window.Suppliers26.order(cfg.id,'standard',5);
       action=res.ok?'Создан заказ на 5 шт.':res.error;
      }else action='Запас достаточен';

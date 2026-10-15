@@ -29,8 +29,7 @@ function runProjectDay(id,p){const cfg=PROJECTS.find(x=>x.id===id),m=p.metrics; 
    if(Math.random()<Math.min(.5,opportunity*.09)){m.orders++;econInvoice(id,Math.round(cfg.potential*rnd(3.1,6.5)),cfg.name+' — заказ',Math.ceil(rnd(2,9)));}
  }else if(cfg.type==='commerce'){
    // One shared inventory: manual orders and simulated daily orders debit the same stock.
-   const store=window.BusinessV14?.state?.()?.byProject;
-   const inv=store?.[id];
+   const inv=window.BusinessV14?.warehouse?.record(id);
    const available=Math.max(0,Math.floor(Number(inv?.stock)||0));
    if(available){
      const price=Math.max(490,Math.min(5000,Number(inv.salePrice)||990));
@@ -38,11 +37,8 @@ function runProjectDay(id,p){const cfg=PROJECTS.find(x=>x.id===id),m=p.metrics; 
      const priceFactor=Math.max(.15,Math.min(1.6,990/price));
      const sold=Math.min(available,Math.floor(base*priceFactor));
      if(sold){
-       const fee=sold*Math.round(price*.18),ship=sold*110;
-       econPost('Товарная выручка',sold*price,cfg.name,'Сценарный спрос: '+sold+' шт.',id);
-       econPost('Комиссия площадки',-fee,cfg.name,'18% от цены за штуку (сценарий)',id);
-       econPost('Логистика',-ship,cfg.name,'110 ₽ за штуку (сценарий)',id);
-       inv.stock-=sold;inv.unitsSold=(Number(inv.unitsSold)||0)+sold;m.orders+=sold;
+       const result=window.BusinessV14.warehouse.sell(id,sold,price,cfg.name,'Сценарный спрос: '+sold+' шт.','demand');
+       if(result.ok)m.orders+=sold;
      }
    }
  }else if(cfg.type==='offline'){
